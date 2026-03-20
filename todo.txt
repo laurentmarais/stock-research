@@ -1,0 +1,85 @@
+I want you to create an app using:
+- React
+- NodeJS
+- SQLite
+- AI API
+
+to:
+- figure out what the current risks and opportunities in the market are today in general
+- how it can affect individual stock performance
+- have a database with an interface where I can add stock tickers
+- add a list of standard questions that will be stored in the database
+- run through each stock ticker and get the real stock name, then ask all questions
+- store the stock name as well as all answers in the database for each ticker
+- Rank stocks based on suitability in the current market conditions
+
+Interface:
+- Ticker search on left panel
+- Ticker tab where stocks can be added or removed.  Bulk add of a list of ticker symbols in a textbox should be allowed.  Any type of delimiter accepted (newline, space, tab, comma, semicolon etc.)
+- Market sentiment tab where AI can get the current market conditions and store it in a database.  Also the types of downstream repercussions like the Iran war influencing oil prices, spiking inflation, increasing interest rates.  Good for energy stocks, military etc
+- Questions tab for AI
+- Instructions tab for additional AI instructions relating to getting actual information from the internet and verified sources - SEC, Yahoo finance, Benzinga etc
+- Answers tab where we can look at all answers per question per ticker
+- Evaluation tab where the answers for each ticker is fed to an AI API to get back an evaluation for suitability in current market conditions
+
+
+Reference:
+- Look at the app in the reference folder for:
+    - UI framework
+    - AI API access
+    - Settings interface
+    - Database usage
+    - Tab styling
+    - How to find a stock name based on a ticker
+    - How to sync a stock ticker and name accross tabs from the ticker tab
+
+
+    Questions
+    ---------
+
+    1. Which AI provider and model should the app use for market sentiment analysis, question answering, and final stock evaluation?
+    Answer: Based on the reference app, support both xAI and Google Gemini.  The reference defaults each AI tab to Gemini with model models/gemini-2.5-pro, while also supporting xAI with grok-4-1-fast-reasoning.  For this app, use the same pattern: Gemini as default, xAI as an optional provider.
+
+    2. Should the app use a single AI provider for all tasks, or separate providers/models for web-grounded research versus scoring and evaluation?
+    Answer: Based on the reference app, use a single provider abstraction with per-tab provider/model selection rather than hard-coding separate providers for different tasks.  The same architecture can support different providers later if needed.
+
+    3. How should the app gather current market information: direct web fetching from approved sources, an external search API, manual pasted context, or a combination?
+    Answer: Based on the reference app, use a combination.  Server-side fetching should be used for stable sources such as SEC and Yahoo endpoints, while AI prompts should require current public sources and citations for broader research.
+
+    4. Which sources should be treated as authoritative or preferred, and should the app store source URLs/citations with each market sentiment record and stock answer?
+    Answer: Based on the reference app, prefer SEC filings, SEC browse/search pages, company investor relations pages, Yahoo Finance, and other reputable finance sites.  Yes, citations/URLs should be included and stored with market sentiment records and stock answers wherever possible.
+
+    5. What stock universe should be supported initially: US equities only, ETFs too, OTC stocks, ADRs, international exchanges, or crypto-related tickers?
+    Answer: Based on the reference app, the safest initial scope is primarily US-listed equities and ADR-style public company tickers because the resolver and data sources are built around SEC, Yahoo, and StockAnalysis.  Other instrument types are not clearly supported by the reference.
+
+    6. When resolving a ticker to its real company name, what should happen if the ticker is invalid, delisted, ambiguous, or maps to multiple exchanges?
+    Answer: Based on the reference app, do not hard-fail the UI.  Resolve using SEC first, then Yahoo, then StockAnalysis, and if nothing is found return an unresolved result with an empty company name and resolvedVia=none.  Also allow a manual company-name override in the UI that becomes the authoritative identity across tabs.
+
+    7. Should the standard question list be seeded once and then editable in the UI, versioned over time, or treated as a fixed built-in template?
+    Answer: Seed it once so that we can edit it.  Add functionality so that we can have question groups like Tradingview has screeners.  Each question group can have a name.  You can create a new question group as a copy of an existing one or start from scratch.  You can select which question group is the current one in use
+
+    8. What exact output format should each AI answer use: freeform text only, structured fields such as bullish/bearish/neutral plus confidence, or both?
+    Answer: Based on the reference app, use both.  Keep a readable narrative answer for the UI, but also require a structured machine-readable summary for scoring, filtering, and ranking.
+
+    9. How should the final suitability ranking work: numeric score, letter grade, tiered ranking, explainable pros/cons, and should there be custom weighting per question?
+    Answer: Numeric score (1-5) for suitability in current market.  Also score by question
+
+    10. Should the evaluation focus on short-term trading, medium-term swing investing, long-term investing, or allow multiple time horizons?
+    Answer: My approach to day trading is that I only trade stocks that are profitable and undervalued.  The purpose of this app is to figure out if the current market conditions present a headwind, tailwind or is neutral for buying this stock
+
+    11. How often should market sentiment and per-ticker answers be refreshed, and should old runs be preserved as historical snapshots in the database?
+    Answer: Based on the reference app, runs should be stored as historical snapshots and preserved indefinitely until manually deleted.  The reference stores query results by day and includes a History tab for long-term retention and deletion.
+
+    12. Does the app need user-configurable settings for API keys, preferred sources, refresh intervals, model selection, and rate-limit handling similar to the reference app?
+    Answer: Based on the reference app, yes for API keys and model/provider selection in a Settings interface backed by SQLite.  Preferred sources can be enforced through instructions/prompts.  Refresh intervals and rate-limit controls are not implemented in the reference and remain open design decisions.
+
+    13. Should the app process all tickers sequentially, in parallel with rate limiting, or via a resumable background job queue with progress tracking?
+    Answer: Sequentially.  Pausable and Resumable background job queue with progress tracking
+
+    14. In the Answers and Evaluation tabs, what filtering and comparison features are required: by ticker, by question, by run date, by score, or side-by-side comparisons?
+    Answer: By ticker, sortable on score
+
+    15. Do you want the app to support export/import of tickers, questions, answers, and evaluations, such as CSV, JSON, or SQLite backup files?
+    Answer: Not at the moment
+
+    

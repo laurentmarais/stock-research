@@ -1,0 +1,76 @@
+Progress so far
+===============
+
+Requirements and planning
+- Read and expanded todo.txt with clarification questions.
+- Reviewed the reference app to extract architecture, UI, provider, SQLite, and ticker-resolution patterns.
+- Filled in requirement answers and used them as the implementation baseline.
+
+Application scaffold
+- Built a React + Vite + Mantine client and a Node.js + Express + SQLite server in the main workspace.
+- Added tabs for Tickers, Market Sentiment, Questions, Instructions, Answers, Evaluation, History, and Settings.
+- Added a SQLite-backed settings flow for Gemini and xAI API keys.
+
+Server and database
+- Implemented SQLite schema for settings, tickers, question groups, questions, instructions, market runs, jobs, answers, evaluations, and company overrides.
+- Seeded default question group and instructions.
+- Added resumable job behavior and answer deduplication by job_id + ticker + question_id.
+- Fixed latest-answer selection so evaluations use the most recent answer set per ticker instead of mixing history.
+
+Ticker/company identity
+- Implemented ticker enrichment and storage of company name, exchange, CIK, and resolver source.
+- Upgraded company resolution to use SEC exchange data, SEC ticker-to-CIK data, Yahoo, and StockAnalysis fallback.
+- Added manual company override storage and API.
+- Added company override UI in the Tickers tab.
+
+Retrieval and grounding
+- Added explicit SEC filings retrieval.
+- Added explicit source-context generation for per-ticker analysis.
+- Added explicit market source-context generation.
+- Initially used Yahoo for market proxies, then replaced the broken market-only path with robust fallbacks:
+	- Stooq daily history for broad ETF and sector proxies
+	- FRED CSV series for the 10Y yield and WTI crude
+- Kept Yahoo as primary where available, but degraded gracefully instead of failing the run.
+
+AI/provider reliability
+- Copied Gemini and xAI API keys from the reference SQLite database into the live app database.
+- Added retry/backoff handling for transient provider failures such as 429/502/503/504.
+
+Validation completed
+- Verified settings endpoint and copied API keys are active.
+- Verified SEC filings endpoint works.
+- Verified company override save and clear behavior works.
+- Verified market sentiment run succeeds and stores a record.
+- Verified paused analysis jobs can resume and continue from saved progress.
+- Verified a full analysis job completed for the tracked tickers.
+- Verified evaluations completed successfully.
+
+Latest validated outcomes
+- Market sentiment now uses real sourced fallback market data instead of failing when Yahoo rate-limits.
+- Completed full analysis run: 30/30 answers.
+- Completed evaluation run for AAPL, MSFT, and NVDA.
+- Latest evaluation results:
+	- AAPL: score 2, alignment headwind
+	- MSFT: score 2, alignment headwind
+	- NVDA: score 2, alignment headwind
+
+Current limitations
+- Market proxy fallback sources are reliable, but some are daily-close based rather than true intraday snapshots.
+- Yahoo remains rate-limited from this environment, so the app should not depend on Yahoo for critical market-wide proxy retrieval.
+- The old failed analysis job remains in history as a failed record from before retry logic was added.
+
+Next steps
+==========
+
+High priority
+- Add a stronger intraday market data source so market sentiment uses fresher same-day proxy data instead of mostly daily fallback values.
+- Add per-question retry metadata and UI visibility so transient model failures are easier to inspect.
+
+Medium priority
+- Improve the Evaluation tab with clearer ranking views, filters, and explanation summaries.
+- Add richer citation display in Answers and Market tabs so sources are easier to inspect from the UI.
+- Add explicit status indicators showing whether source context came from Yahoo, SEC, Stooq, or FRED.
+
+Low priority
+- Clean up older failed jobs from history or add a UI action to archive/delete them.
+- Add optional import/export or backup features later if needed.

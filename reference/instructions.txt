@@ -1,0 +1,52 @@
+Create 2 new tabs that works in the same basic way as the other AI tabs:
+------------------------------------------------------------------------
+
+Value tab
+---------
+create a new tab called "Value"
+on this tab, like on all the others, I want you to use AI to do research based on the latest information available on the internet
+I want you to let the AI try and figure out the underlying value of the stock and calculate a share price based on that
+this can include things like what owners will get if the complete company is liquidated todays
+also, why people are discounting it from this value
+the risks that devalue the company
+the future upside and reasons for it
+
+Cat out of bag tab
+------------------
+create a new tab called "Cat out of bag"
+this tab must be used for research on the internet, in social media and in forums
+the information that should be looked for are:
+    - any reasons the stock will tumble
+    - any reasons the stock will rise
+    - any secrets that are floating around that can influence our decision to buy the stock
+    - any important dates that can influence the stock price
+    - any dilution causes/triggers/reasons
+
+
+Questions
+---------
+
+1) Should the new "Value" and "Cat out of bag" tabs match the exact UX pattern of the existing AI tabs (e.g., ticker input + Run button + markdown output), or should they reuse the currently selected ticker from another tab?
+Answers: Same pattern as other tabs
+
+2) Which AI backend should these tabs use by default (Gemini, xAI, or whichever is already wired for the other tabs), and do you want a UI toggle to choose the model/provider per request?
+Answers: Same as others
+
+3) For the "Value" tab, do you want a single point estimate share price, a range (bear/base/bull), or both? If a range, what confidence framing should we use (e.g., conservative/base/optimistic)?
+Answers: Both, with reasons and calculations.  Confidence as suggested
+
+4) For the "Value" tab, which valuation methods are in-scope: liquidation/asset value only, or also DCF, comps/peer multiples, and sum-of-the-parts? Any methods you explicitly do NOT want?
+Answers: No, use all that are necessary, but show each individual one and an average or summary value
+
+5) Should the AI output include clickable source links/citations for key claims (filings, news, posts), or is a narrative summary without citations acceptable?
+Answers: Yes, provide links
+
+6) For the "Cat out of bag" tab, which sources are acceptable targets: general web + news only, or explicitly Reddit/Stocktwits/X/Discord/forums? If social platforms are included, which ones should be prioritized?
+Answers: All of these
+
+7) What time window should "important dates" cover (next 30/90/365 days), and should it include scheduled events only (earnings, filings) or also rumored timelines mentioned in forums?
+Answers: Next 365 days.  All + rumored timelines
+
+8) Do you want results cached/stored (similar to the Discord storage) so the latest run persists across refreshes, or should it be ephemeral per session?
+Answers: I want this research to persist indefinitely.  Make it possible to delete a stocks stored information in a separate tab.  Call this tab "History" and build a history manager where items from any tab can be deleted from permanent storage
+

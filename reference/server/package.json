@@ -1,0 +1,16 @@
+{
+  "name": "marketmind-server",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "dev": "node --watch index.js",
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "express": "^4.19.2",
+    "fast-xml-parser": "^5.3.3",
+    "playwright": "*"
+  }
+}

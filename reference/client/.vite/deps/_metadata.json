@@ -1,0 +1,91 @@
+{
+  "hash": "4df104b8",
+  "configHash": "bf820a52",
+  "lockfileHash": "13b7e451",
+  "browserHash": "5a938238",
+  "optimized": {
+    "react": {
+      "src": "../../../node_modules/react/index.js",
+      "file": "react.js",
+      "fileHash": "54d8a471",
+      "needsInterop": true
+    },
+    "react-dom": {
+      "src": "../../../node_modules/react-dom/index.js",
+      "file": "react-dom.js",
+      "fileHash": "bb5a4abb",
+      "needsInterop": true
+    },
+    "react/jsx-dev-runtime": {
+      "src": "../../../node_modules/react/jsx-dev-runtime.js",
+      "file": "react_jsx-dev-runtime.js",
+      "fileHash": "bbac9c80",
+      "needsInterop": true
+    },
+    "react/jsx-runtime": {
+      "src": "../../../node_modules/react/jsx-runtime.js",
+      "file": "react_jsx-runtime.js",
+      "fileHash": "e94161e2",
+      "needsInterop": true
+    },
+    "@mantine/core": {
+      "src": "../../../node_modules/@mantine/core/esm/index.mjs",
+      "file": "@mantine_core.js",
+      "fileHash": "b5ff089f",
+      "needsInterop": false
+    },
+    "@mantine/hooks": {
+      "src": "../../../node_modules/@mantine/hooks/esm/index.mjs",
+      "file": "@mantine_hooks.js",
+      "fileHash": "8319f57b",
+      "needsInterop": false
+    },
+    "chart.js/auto": {
+      "src": "../../../node_modules/chart.js/auto/auto.js",
+      "file": "chart__js_auto.js",
+      "fileHash": "b046ba63",
+      "needsInterop": false
+    },
+    "dompurify": {
+      "src": "../../../node_modules/dompurify/dist/purify.es.mjs",
+      "file": "dompurify.js",
+      "fileHash": "5ababe94",
+      "needsInterop": false
+    },
+    "marked": {
+      "src": "../../../node_modules/marked/lib/marked.esm.js",
+      "file": "marked.js",
+      "fileHash": "e56f6cbd",
+      "needsInterop": false
+    },
+    "react-dom/client": {
+      "src": "../../../node_modules/react-dom/client.js",
+      "file": "react-dom_client.js",
+      "fileHash": "43885f23",
+      "needsInterop": true
+    },
+    "react-router-dom": {
+      "src": "../../../node_modules/react-router-dom/dist/index.mjs",
+      "file": "react-router-dom.js",
+      "fileHash": "5187674e",
+      "needsInterop": false
+    }
+  },
+  "chunks": {
+    "chunk-CRSB3YAX": {
+      "file": "chunk-CRSB3YAX.js"
+    },
+    "chunk-ORFUGIXX": {
+      "file": "chunk-ORFUGIXX.js"
+    },
+    "chunk-YIAG6VNE": {
+      "file": "chunk-YIAG6VNE.js"
+    },
+    "chunk-URVJV3K3": {
+      "file": "chunk-URVJV3K3.js"
+    },
+    "chunk-EQCVQC35": {
+      "file": "chunk-EQCVQC35.js"
+    }
+  }
+}
