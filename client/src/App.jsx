@@ -5,6 +5,7 @@ import {
   Box,
   Button,
   Card,
+  Checkbox,
   Group,
   Loader,
   NavLink,
@@ -27,6 +28,7 @@ import DOMPurify from 'dompurify';
 const TABS = [
   { key: 'tickers', label: 'Tickers', icon: IconTargetArrow },
   { key: 'market', label: 'Market Sentiment', icon: IconMoodSearch },
+  { key: 'runner', label: 'Runner', icon: IconPlayerPlay },
   { key: 'questions', label: 'Questions', icon: IconChecklist },
   { key: 'instructions', label: 'Instructions', icon: IconMessage2 },
   { key: 'answers', label: 'Answers', icon: IconDatabase },
@@ -77,6 +79,8 @@ export default function App() {
   const [provider, setProvider] = React.useState('gemini');
   const [model, setModel] = React.useState('');
   const [models, setModels] = React.useState([]);
+  const [overwriteAnswers, setOverwriteAnswers] = React.useState(false);
+  const [overwriteEvaluations, setOverwriteEvaluations] = React.useState(false);
   const [settings, setSettings] = React.useState({ xai: { masked: '', configured: false }, gemini: { masked: '', configured: false } });
   const [settingsDraft, setSettingsDraft] = React.useState({ xaiApiKey: '', geminiApiKey: '' });
   const [settingsMessage, setSettingsMessage] = React.useState('');
@@ -93,9 +97,20 @@ export default function App() {
   const [answers, setAnswers] = React.useState([]);
   const [answersTickerFilter, setAnswersTickerFilter] = React.useState('');
   const [evaluations, setEvaluations] = React.useState([]);
+  const [selectedEvaluationId, setSelectedEvaluationId] = React.useState('');
+  const [evaluationSearch, setEvaluationSearch] = React.useState('');
+  const [evaluationAlignmentFilter, setEvaluationAlignmentFilter] = React.useState('');
+  const [evaluationSortBy, setEvaluationSortBy] = React.useState('score');
+  const [evaluationSortDirection, setEvaluationSortDirection] = React.useState('desc');
   const [history, setHistory] = React.useState([]);
   const [jobs, setJobs] = React.useState([]);
   const [jobActionLoading, setJobActionLoading] = React.useState(false);
+  const [runnerPreview, setRunnerPreview] = React.useState({ all: null, selected: null });
+  const [runnerPreviewLoading, setRunnerPreviewLoading] = React.useState(false);
+  const [runnerPreviewError, setRunnerPreviewError] = React.useState('');
+  const [evaluationPreview, setEvaluationPreview] = React.useState({ all: null, selected: null });
+  const [evaluationPreviewLoading, setEvaluationPreviewLoading] = React.useState(false);
+  const [evaluationPreviewError, setEvaluationPreviewError] = React.useState('');
   const [addLoading, setAddLoading] = React.useState(false);
   const [appError, setAppError] = React.useState('');
   const [selectedCompany, setSelectedCompany] = React.useState(null);
@@ -217,6 +232,77 @@ export default function App() {
     setJobs(Array.isArray(data?.items) ? data.items : []);
   }
 
+  async function loadRunnerPreview(options = {}) {
+    const { showLoader = true } = options;
+    if (!activeGroupId) {
+      setRunnerPreview({ all: null, selected: null });
+      return;
+    }
+
+    if (showLoader) setRunnerPreviewLoading(true);
+    try {
+      setRunnerPreviewError('');
+      const allParams = new URLSearchParams({
+        groupId: activeGroupId,
+        overwriteAnswers: String(overwriteAnswers)
+      });
+      const selectedParams = new URLSearchParams({
+        groupId: activeGroupId,
+        overwriteAnswers: String(overwriteAnswers)
+      });
+      const normalizedTicker = normalizeTicker(selectedTicker);
+      if (normalizedTicker) selectedParams.set('ticker', normalizedTicker);
+
+      const [allData, selectedData] = await Promise.all([
+        fetchJson(`/api/analysis/preview?${allParams.toString()}`),
+        normalizedTicker
+          ? fetchJson(`/api/analysis/preview?${selectedParams.toString()}`)
+          : Promise.resolve({ counts: null })
+      ]);
+
+      setRunnerPreview({
+        all: allData?.counts || null,
+        selected: selectedData?.counts || null
+      });
+    } catch (e) {
+      setRunnerPreviewError(e instanceof Error ? e.message : 'Failed to load runner preview');
+    } finally {
+      if (showLoader) setRunnerPreviewLoading(false);
+    }
+  }
+
+  async function loadEvaluationPreview(options = {}) {
+    const { showLoader = true } = options;
+    if (showLoader) setEvaluationPreviewLoading(true);
+    try {
+      setEvaluationPreviewError('');
+      const allParams = new URLSearchParams({
+        overwriteEvaluations: String(overwriteEvaluations)
+      });
+      const selectedParams = new URLSearchParams({
+        overwriteEvaluations: String(overwriteEvaluations)
+      });
+      const normalizedTicker = normalizeTicker(selectedTicker);
+      if (normalizedTicker) selectedParams.set('ticker', normalizedTicker);
+
+      const [allData, selectedData] = await Promise.all([
+        fetchJson(`/api/evaluations/preview?${allParams.toString()}`),
+        normalizedTicker
+          ? fetchJson(`/api/evaluations/preview?${selectedParams.toString()}`)
+          : Promise.resolve({ counts: null })
+      ]);
+
+      setEvaluationPreview({
+        all: allData?.counts || null,
+        selected: selectedData?.counts || null
+      });
+    } catch (e) {
+      setEvaluationPreviewError(e instanceof Error ? e.message : 'Failed to load evaluation preview');
+    } finally {
+      if (showLoader) setEvaluationPreviewLoading(false);
+    }
+  }
+
   async function bootstrap() {
     try {
       setAppError('');
@@ -247,6 +333,14 @@ export default function App() {
   }, [activeGroupId]);
 
   React.useEffect(() => {
+    loadRunnerPreview().catch(() => undefined);
+  }, [activeGroupId, overwriteAnswers, selectedTicker, tickers.length, questions.length]);
+
+  React.useEffect(() => {
+    loadEvaluationPreview().catch(() => undefined);
+  }, [overwriteEvaluations, selectedTicker, evaluations.length, answers.length]);
+
+  React.useEffect(() => {
     loadSelectedCompany(selectedTicker).catch(() => undefined);
   }, [selectedTicker]);
 
@@ -260,6 +354,8 @@ export default function App() {
       if (tab === 'answers') loadAnswers().catch(() => undefined);
       if (tab === 'evaluation') loadEvaluations().catch(() => undefined);
       if (tab === 'history') loadHistory().catch(() => undefined);
+      if (tab === 'runner') loadRunnerPreview({ showLoader: false }).catch(() => undefined);
+      if (tab === 'evaluation') loadEvaluationPreview({ showLoader: false }).catch(() => undefined);
     }, 4000);
     return () => window.clearInterval(timer);
   }, [tab, answersTickerFilter]);
@@ -409,7 +505,24 @@ export default function App() {
       await fetchJson('/api/analysis/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider, model, groupId: activeGroupId })
+        body: JSON.stringify({ provider, model, groupId: activeGroupId, overwriteAnswers })
+      });
+      await loadJobs();
+      setTab('answers');
+    } finally {
+      setJobActionLoading(false);
+    }
+  }
+
+  async function runOneTicker() {
+    const ticker = normalizeTicker(selectedTicker);
+    if (!ticker) return;
+    setJobActionLoading(true);
+    try {
+      await fetchJson('/api/analysis/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider, model, groupId: activeGroupId, ticker, overwriteAnswers })
       });
       await loadJobs();
       setTab('answers');
@@ -438,19 +551,34 @@ export default function App() {
     }
   }
 
-  async function runEvaluations() {
+  async function runEvaluations(ticker = '') {
     setJobActionLoading(true);
     try {
       await fetchJson('/api/evaluations/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider, model })
+        body: JSON.stringify({ provider, model, ticker, overwriteEvaluations })
       });
-      await Promise.all([loadEvaluations(), loadHistory()]);
+      await Promise.all([loadEvaluations(), loadHistory(), loadEvaluationPreview()]);
       setTab('evaluation');
     } finally {
       setJobActionLoading(false);
     }
+  }
+
+  async function runEvaluationForSelectedTicker() {
+    const ticker = normalizeTicker(selectedTicker);
+    if (!ticker) return;
+    await runEvaluations(ticker);
+  }
+
+  function toggleEvaluationSort(column) {
+    if (evaluationSortBy === column) {
+      setEvaluationSortDirection((current) => current === 'asc' ? 'desc' : 'asc');
+      return;
+    }
+    setEvaluationSortBy(column);
+    setEvaluationSortDirection(column === 'score' || column === 'createdAt' ? 'desc' : 'asc');
   }
 
   async function deleteHistoryTicker(ticker) {
@@ -470,6 +598,95 @@ export default function App() {
     resolvedVia: selectedTickerCard.resolvedVia,
     sources: []
   } : null);
+
+  const filteredEvaluations = React.useMemo(() => {
+    const term = evaluationSearch.trim().toUpperCase();
+    return evaluations.filter((item) => {
+      const matchesSearch = !term
+        || String(item.ticker || '').toUpperCase().includes(term)
+        || String(item.companyName || '').toUpperCase().includes(term)
+        || String(item.marketAlignment || '').toUpperCase().includes(term);
+      const matchesAlignment = !evaluationAlignmentFilter || item.marketAlignment === evaluationAlignmentFilter;
+      return matchesSearch && matchesAlignment;
+    });
+  }, [evaluationAlignmentFilter, evaluationSearch, evaluations]);
+
+  const sortedEvaluations = React.useMemo(() => {
+    const factor = evaluationSortDirection === 'asc' ? 1 : -1;
+    return [...filteredEvaluations].sort((left, right) => {
+      const leftValue = (() => {
+        if (evaluationSortBy === 'ticker') return String(left.ticker || '').toUpperCase();
+        if (evaluationSortBy === 'companyName') return String(left.companyName || '').toUpperCase();
+        if (evaluationSortBy === 'marketAlignment') return String(left.marketAlignment || '').toUpperCase();
+        if (evaluationSortBy === 'createdAt') return new Date(left.createdAt).getTime();
+        return Number(left.score || 0);
+      })();
+      const rightValue = (() => {
+        if (evaluationSortBy === 'ticker') return String(right.ticker || '').toUpperCase();
+        if (evaluationSortBy === 'companyName') return String(right.companyName || '').toUpperCase();
+        if (evaluationSortBy === 'marketAlignment') return String(right.marketAlignment || '').toUpperCase();
+        if (evaluationSortBy === 'createdAt') return new Date(right.createdAt).getTime();
+        return Number(right.score || 0);
+      })();
+
+      if (leftValue < rightValue) return -1 * factor;
+      if (leftValue > rightValue) return 1 * factor;
+      return 0;
+    });
+  }, [evaluationSortBy, evaluationSortDirection, filteredEvaluations]);
+
+  const selectedEvaluation = evaluations.find((item) => item.id === selectedEvaluationId) || null;
+
+  const sortLabel = (label, column) => `${label}${evaluationSortBy === column ? ` ${evaluationSortDirection === 'asc' ? '↑' : '↓'}` : ''}`;
+
+  function renderPreviewCard(title, counts, emptyText) {
+    return (
+      <Card withBorder radius="md" p="md">
+        <Stack gap="xs">
+          <Text fw={700}>{title}</Text>
+          {!counts ? (
+            <Text size="sm" c="dimmed">{emptyText}</Text>
+          ) : (
+            <>
+              <Group gap="sm" wrap="wrap">
+                <Badge color="brown">Pending {counts.pendingCount}</Badge>
+                <Badge variant="light">Pairs {counts.totalPairs}</Badge>
+                <Badge variant="light">Tickers {counts.tickerCount}</Badge>
+                <Badge variant="light">Questions {counts.questionCount}</Badge>
+              </Group>
+              <Text size="sm" c="dimmed">
+                Skips: {counts.skippedExisting} existing answers, {counts.skippedCompleted} already completed in the current job context.
+              </Text>
+            </>
+          )}
+        </Stack>
+      </Card>
+    );
+  }
+
+  function renderEvaluationPreviewCard(title, counts, emptyText) {
+    return (
+      <Card withBorder radius="md" p="md">
+        <Stack gap="xs">
+          <Text fw={700}>{title}</Text>
+          {!counts ? (
+            <Text size="sm" c="dimmed">{emptyText}</Text>
+          ) : (
+            <>
+              <Group gap="sm" wrap="wrap">
+                <Badge color="brown">Pending {counts.pendingCount}</Badge>
+                <Badge variant="light">Eligible {counts.tickerCount}</Badge>
+                <Badge variant="light">Answered {counts.availableAnswerSets}</Badge>
+              </Group>
+              <Text size="sm" c="dimmed">
+                Skips: {counts.skippedExisting} existing evaluations.
+              </Text>
+            </>
+          )}
+        </Stack>
+      </Card>
+    );
+  }
 
   return (
     <AppShell
@@ -553,32 +770,14 @@ export default function App() {
                   {displayCompany?.name ? <Badge variant="light">{displayCompany.name}</Badge> : null}
                 </Group>
               </Box>
-              <Group wrap="wrap">
-                <Select
-                  label="Provider"
-                  data={[{ value: 'gemini', label: 'Gemini' }, { value: 'xai', label: 'xAI' }]}
-                  value={provider}
-                  onChange={(value) => setProvider(value || 'gemini')}
-                  w={160}
-                />
-                <Select
-                  label="Model"
-                  data={models.map((item) => ({ value: item, label: item }))}
-                  value={model}
-                  onChange={(value) => setModel(value || '')}
-                  placeholder="Model"
-                  searchable
-                  w={280}
-                />
-                <Button onClick={startAnswerRun} loading={jobActionLoading}>Run All Tickers</Button>
-                <Button variant="default" onClick={runEvaluations} loading={jobActionLoading}>Evaluate Rankings</Button>
-              </Group>
             </Group>
             {latestJob ? (
               <Group mt="md" gap="sm" wrap="wrap">
                 <Badge color={latestJob.status === 'completed' ? 'green' : latestJob.status === 'paused' ? 'yellow' : latestJob.status === 'failed' ? 'red' : 'blue'}>
                   {latestJob.type} · {latestJob.status}
                 </Badge>
+                {latestJob.targetTicker ? <Badge variant="light">Ticker: {latestJob.targetTicker}</Badge> : <Badge variant="light">All Tickers</Badge>}
+                {latestJob.overwriteAnswers ? <Badge variant="light" color="orange">Overwrite Answers</Badge> : <Badge variant="light">Skip Existing Answers</Badge>}
                 <Text size="sm" c="dimmed">{latestJob.completedCount}/{latestJob.totalCount} complete</Text>
                 <Text size="sm">{latestJob.progressMessage || ''}</Text>
                 {latestJob.status === 'running' ? <Button size="xs" variant="light" leftSection={<IconPlayerPause size={14} />} onClick={() => pauseJob(latestJob.id)}>Pause</Button> : null}
@@ -620,7 +819,16 @@ export default function App() {
                           <Text fw={800} mt={6}>{displayCompany?.name || 'Company unresolved'}</Text>
                           <Text size="sm" c="dimmed">Exchange: {displayCompany?.exchange || 'Unknown'} · CIK: {displayCompany?.cik || 'Unknown'}</Text>
                         </Box>
-                        <Button variant="default" onClick={() => loadSelectedCompany(selectedTicker)} loading={companyLookupLoading}>Lookup company name</Button>
+                        <Group gap="sm">
+                          <Button
+                            color="red"
+                            variant="light"
+                            onClick={() => removeTicker(selectedTicker)}
+                          >
+                            Remove Ticker
+                          </Button>
+                          <Button variant="default" onClick={() => loadSelectedCompany(selectedTicker)} loading={companyLookupLoading}>Lookup company name</Button>
+                        </Group>
                       </Group>
                       {companyLookupError ? <Text c="red" size="sm">{companyLookupError}</Text> : null}
                       <Group align="end" wrap="wrap">
@@ -658,7 +866,19 @@ export default function App() {
                             <Table.Td>{item.ticker}</Table.Td>
                             <Table.Td>{item.companyName || 'Unresolved'}</Table.Td>
                             <Table.Td>{item.resolvedVia || 'none'}</Table.Td>
-                            <Table.Td><Button size="xs" variant="subtle" color="red" onClick={() => removeTicker(item.ticker)}>Remove</Button></Table.Td>
+                            <Table.Td>
+                              <Button
+                                size="xs"
+                                variant="subtle"
+                                color="red"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  removeTicker(item.ticker);
+                                }}
+                              >
+                                Remove
+                              </Button>
+                            </Table.Td>
                           </Table.Tr>
                         ))}
                       </Table.Tbody>
@@ -696,6 +916,52 @@ export default function App() {
                     ) : null}
                   </Stack>
                 )}
+              </Stack>
+            </Paper>
+          ) : null}
+
+          {tab === 'runner' ? (
+            <Paper withBorder p="md" radius="lg" className="app-card">
+              <Stack>
+                <Box>
+                  <Title order={3}>Runner</Title>
+                  <Text size="sm" c="dimmed">Run analysis across all tracked tickers or only the selected ticker. By default, previously answered ticker/question pairs are skipped unless overwrite is enabled.</Text>
+                </Box>
+                <Group align="end" wrap="wrap">
+                  <Select
+                    label="Provider"
+                    data={[{ value: 'gemini', label: 'Gemini' }, { value: 'xai', label: 'xAI' }]}
+                    value={provider}
+                    onChange={(value) => setProvider(value || 'gemini')}
+                    w={180}
+                  />
+                  <Select
+                    label="Model"
+                    data={models.map((item) => ({ value: item, label: item }))}
+                    value={model}
+                    onChange={(value) => setModel(value || '')}
+                    placeholder="Model"
+                    searchable
+                    w={320}
+                  />
+                </Group>
+                <Checkbox
+                  checked={overwriteAnswers}
+                  onChange={(event) => setOverwriteAnswers(event.currentTarget.checked)}
+                  label="Overwrite Answers"
+                />
+                {runnerPreviewError ? <Text c="red">{runnerPreviewError}</Text> : null}
+                {runnerPreviewLoading ? <Loader size="sm" /> : null}
+                <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
+                  {renderPreviewCard('Run All Preview', runnerPreview.all, 'Preview unavailable.')}
+                  {renderPreviewCard('Run One Preview', runnerPreview.selected, selectedTicker ? 'Preview unavailable.' : 'Select a ticker to preview one-ticker work.')}
+                </SimpleGrid>
+                <Group wrap="wrap">
+                  <Button onClick={startAnswerRun} loading={jobActionLoading}>Run All Tickers</Button>
+                  <Button variant="default" onClick={runOneTicker} loading={jobActionLoading} disabled={!selectedTicker}>Run One Ticker</Button>
+                  <Button variant="light" onClick={() => setTab('evaluation')}>Open Evaluation</Button>
+                </Group>
+                <Text size="sm" c="dimmed">Selected ticker for one-ticker runs: {selectedTicker || 'None selected'}</Text>
               </Stack>
             </Paper>
           ) : null}
@@ -822,23 +1088,74 @@ export default function App() {
           {tab === 'evaluation' ? (
             <Paper withBorder p="md" radius="lg" className="app-card">
               <Stack>
-                <Group justify="space-between">
-                  <Title order={3}>Evaluation</Title>
-                  <Button onClick={runEvaluations} loading={jobActionLoading}>Run Evaluation</Button>
+                <Group justify="space-between" align="start" wrap="wrap">
+                  <Box>
+                    <Title order={3}>Evaluation</Title>
+                    <Text size="sm" c="dimmed">Evaluate all answered tickers or only the selected ticker. Existing evaluations are skipped unless overwrite is enabled.</Text>
+                  </Box>
+                </Group>
+                <Checkbox
+                  checked={overwriteEvaluations}
+                  onChange={(event) => setOverwriteEvaluations(event.currentTarget.checked)}
+                  label="Overwrite Evaluations"
+                />
+                {evaluationPreviewError ? <Text c="red">{evaluationPreviewError}</Text> : null}
+                {evaluationPreviewLoading ? <Loader size="sm" /> : null}
+                <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
+                  {renderEvaluationPreviewCard('Evaluate All Preview', evaluationPreview.all, 'Preview unavailable.')}
+                  {renderEvaluationPreviewCard('Evaluate One Preview', evaluationPreview.selected, selectedTicker ? 'Preview unavailable.' : 'Select a ticker to preview one-stock evaluation.')}
+                </SimpleGrid>
+                <Group wrap="wrap">
+                  <Button onClick={() => runEvaluations()} loading={jobActionLoading}>Evaluate All Tickers</Button>
+                  <Button variant="default" onClick={runEvaluationForSelectedTicker} loading={jobActionLoading} disabled={!selectedTicker}>Evaluate One Ticker</Button>
+                </Group>
+                <Text size="sm" c="dimmed">Selected ticker for one-ticker evaluation: {selectedTicker || 'None selected'}</Text>
+                <Group align="end" wrap="wrap">
+                  <TextInput
+                    label="Filter"
+                    placeholder="Ticker, company, or alignment"
+                    value={evaluationSearch}
+                    onChange={(event) => setEvaluationSearch(event.currentTarget.value)}
+                    w={280}
+                  />
+                  <Select
+                    label="Alignment"
+                    clearable
+                    placeholder="All alignments"
+                    data={[
+                      { value: 'tailwind', label: 'Tailwind' },
+                      { value: 'neutral', label: 'Neutral' },
+                      { value: 'headwind', label: 'Headwind' }
+                    ]}
+                    value={evaluationAlignmentFilter || null}
+                    onChange={(value) => setEvaluationAlignmentFilter(value || '')}
+                    w={220}
+                  />
+                  <Badge variant="light">Rows {sortedEvaluations.length}</Badge>
                 </Group>
                 <Table striped highlightOnHover>
                   <Table.Thead>
                     <Table.Tr>
-                      <Table.Th>Ticker</Table.Th>
-                      <Table.Th>Company</Table.Th>
-                      <Table.Th>Alignment</Table.Th>
-                      <Table.Th>Score</Table.Th>
-                      <Table.Th>Updated</Table.Th>
+                      <Table.Th>
+                        <Button variant="subtle" compact onClick={() => toggleEvaluationSort('ticker')}>{sortLabel('Ticker', 'ticker')}</Button>
+                      </Table.Th>
+                      <Table.Th>
+                        <Button variant="subtle" compact onClick={() => toggleEvaluationSort('companyName')}>{sortLabel('Company', 'companyName')}</Button>
+                      </Table.Th>
+                      <Table.Th>
+                        <Button variant="subtle" compact onClick={() => toggleEvaluationSort('marketAlignment')}>{sortLabel('Alignment', 'marketAlignment')}</Button>
+                      </Table.Th>
+                      <Table.Th>
+                        <Button variant="subtle" compact onClick={() => toggleEvaluationSort('score')}>{sortLabel('Score', 'score')}</Button>
+                      </Table.Th>
+                      <Table.Th>
+                        <Button variant="subtle" compact onClick={() => toggleEvaluationSort('createdAt')}>{sortLabel('Updated', 'createdAt')}</Button>
+                      </Table.Th>
                     </Table.Tr>
                   </Table.Thead>
                   <Table.Tbody>
-                    {evaluations.map((item) => (
-                      <Table.Tr key={item.id}>
+                    {sortedEvaluations.map((item) => (
+                      <Table.Tr key={item.id} onClick={() => setSelectedEvaluationId(item.id)} style={{ cursor: 'pointer' }}>
                         <Table.Td>{item.ticker}</Table.Td>
                         <Table.Td>{item.companyName || 'Unknown'}</Table.Td>
                         <Table.Td>{item.marketAlignment || 'neutral'}</Table.Td>
@@ -848,12 +1165,13 @@ export default function App() {
                     ))}
                   </Table.Tbody>
                 </Table>
-                {evaluations.map((item) => (
-                  <Card key={`${item.id}-summary`} withBorder radius="md" p="md">
-                    <Text fw={800}>{item.ticker} · {item.companyName || 'Unknown company'}</Text>
-                    <Box className="rich-output" dangerouslySetInnerHTML={renderMarkdown(item.summaryMd)} />
+                {selectedEvaluation ? (
+                  <Card withBorder radius="md" p="md">
+                    <Text fw={800}>{selectedEvaluation.ticker} · {selectedEvaluation.companyName || 'Unknown company'}</Text>
+                    <Box className="rich-output" dangerouslySetInnerHTML={renderMarkdown(selectedEvaluation.summaryMd)} />
                   </Card>
-                ))}
+                ) : null}
+                {sortedEvaluations.length && !selectedEvaluation ? <Text c="dimmed">Click a company in the table to view its evaluation summary.</Text> : null}
                 {!evaluations.length ? <Text c="dimmed">No evaluations yet.</Text> : null}
               </Stack>
             </Paper>

@@ -110,6 +110,8 @@ export function initDb() {
       provider TEXT NOT NULL,
       model TEXT NOT NULL,
       group_id TEXT,
+      target_ticker TEXT,
+      overwrite_answers INTEGER NOT NULL DEFAULT 0,
       total_count INTEGER NOT NULL DEFAULT 0,
       completed_count INTEGER NOT NULL DEFAULT 0,
       progress_message TEXT,
@@ -157,8 +159,21 @@ export function initDb() {
     CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created_at DESC);
   `);
 
+  ensureJobColumns();
+
   seed();
   return db;
+}
+
+function ensureJobColumns() {
+  const columns = db.prepare('PRAGMA table_info(jobs)').all();
+  const names = new Set(columns.map((column) => column.name));
+  if (!names.has('target_ticker')) {
+    db.exec('ALTER TABLE jobs ADD COLUMN target_ticker TEXT;');
+  }
+  if (!names.has('overwrite_answers')) {
+    db.exec('ALTER TABLE jobs ADD COLUMN overwrite_answers INTEGER NOT NULL DEFAULT 0;');
+  }
 }
 
 function seed() {
@@ -418,13 +433,13 @@ export function getLatestMarketRun() {
   };
 }
 
-export function createJob({ type, provider, model, groupId = null, totalCount = 0 }) {
+export function createJob({ type, provider, model, groupId = null, targetTicker = '', overwriteAnswers = false, totalCount = 0 }) {
   initDb();
   const id = crypto.randomUUID();
   const ts = nowIso();
   db.prepare(
-    'INSERT INTO jobs (id, type, status, provider, model, group_id, total_count, completed_count, progress_message, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)'
-  ).run(id, type, 'running', provider, model, groupId, totalCount, 'Queued', ts, ts);
+    'INSERT INTO jobs (id, type, status, provider, model, group_id, target_ticker, overwrite_answers, total_count, completed_count, progress_message, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)'
+  ).run(id, type, 'running', provider, model, groupId, targetTicker || null, overwriteAnswers ? 1 : 0, totalCount, 'Queued', ts, ts);
   return id;
 }
 
@@ -460,6 +475,8 @@ export function getJob(jobId) {
     provider: row.provider,
     model: row.model,
     groupId: row.group_id,
+    targetTicker: row.target_ticker || '',
+    overwriteAnswers: Number(row.overwrite_answers || 0) === 1,
     totalCount: row.total_count,
     completedCount: row.completed_count,
     progressMessage: row.progress_message || '',
@@ -480,6 +497,8 @@ export function listJobs() {
     provider: row.provider,
     model: row.model,
     groupId: row.group_id,
+    targetTicker: row.target_ticker || '',
+    overwriteAnswers: Number(row.overwrite_answers || 0) === 1,
     totalCount: row.total_count,
     completedCount: row.completed_count,
     progressMessage: row.progress_message || '',
@@ -517,6 +536,25 @@ export function listAnswerKeysForJob(jobId) {
     .prepare('SELECT ticker, question_id FROM answers WHERE job_id=?')
     .all(jobId)
     .map((row) => `${row.ticker}::${row.question_id}`);
+}
+
+export function listExistingAnswerKeys({ tickers = [], questionIds = [] } = {}) {
+  initDb();
+  const normalizedTickers = [...new Set((Array.isArray(tickers) ? tickers : []).map((ticker) => String(ticker || '').trim().toUpperCase()).filter(Boolean))];
+  const normalizedQuestionIds = [...new Set((Array.isArray(questionIds) ? questionIds : []).map((questionId) => String(questionId || '').trim()).filter(Boolean))];
+
+  if (!normalizedTickers.length || !normalizedQuestionIds.length) return [];
+
+  const tickerPlaceholders = normalizedTickers.map(() => '?').join(', ');
+  const questionPlaceholders = normalizedQuestionIds.map(() => '?').join(', ');
+  const rows = db.prepare(
+    `SELECT DISTINCT ticker, question_id
+     FROM answers
+     WHERE ticker IN (${tickerPlaceholders})
+       AND question_id IN (${questionPlaceholders})`
+  ).all(...normalizedTickers, ...normalizedQuestionIds);
+
+  return rows.map((row) => `${row.ticker}::${row.question_id}`);
 }
 
 export function listAnswers({ ticker = '' } = {}) {
@@ -592,6 +630,21 @@ export function listEvaluations() {
     model: row.model,
     createdAt: row.created_at
   }));
+}
+
+export function listExistingEvaluationTickers({ tickers = [] } = {}) {
+  initDb();
+  const normalizedTickers = [...new Set((Array.isArray(tickers) ? tickers : []).map((ticker) => String(ticker || '').trim().toUpperCase()).filter(Boolean))];
+  if (!normalizedTickers.length) return [];
+
+  const placeholders = normalizedTickers.map(() => '?').join(', ');
+  const rows = db.prepare(
+    `SELECT DISTINCT ticker
+     FROM evaluations
+     WHERE ticker IN (${placeholders})`
+  ).all(...normalizedTickers);
+
+  return rows.map((row) => row.ticker);
 }
 
 export function listHistorySummary() {

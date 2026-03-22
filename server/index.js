@@ -24,6 +24,8 @@ import {
   insertMarketRun,
   listAnswerKeysForJob,
   listAnswers,
+  listExistingEvaluationTickers,
+  listExistingAnswerKeys,
   listEvaluations,
   listHistorySummary,
   listJobs,
@@ -193,70 +195,168 @@ async function enrichTicker(ticker) {
   return company;
 }
 
+function collectAnalysisScope({ groupId, targetTicker = '', overwriteAnswers = false, jobId = null }) {
+  const activeGroupId = groupId || getActiveQuestionGroup()?.id;
+  const questions = listQuestions(activeGroupId);
+  const allTickers = listTickers();
+  const normalizedTargetTicker = asOptionalString(targetTicker).toUpperCase();
+  const tickers = normalizedTargetTicker
+    ? allTickers.filter((tickerRow) => tickerRow.ticker === normalizedTargetTicker)
+    : allTickers;
+  const completedKeys = jobId ? new Set(listAnswerKeysForJob(jobId)) : new Set();
+  const questionIds = questions.map((question) => question.id);
+  const tickerSymbols = tickers.map((tickerRow) => tickerRow.ticker);
+  const existingAnswerKeys = overwriteAnswers
+    ? new Set()
+    : new Set(listExistingAnswerKeys({ tickers: tickerSymbols, questionIds }));
+
+  const pendingPairs = [];
+  let skippedCompleted = 0;
+  let skippedExisting = 0;
+
+  for (const tickerRow of tickers) {
+    for (const question of questions) {
+      const key = `${tickerRow.ticker}::${question.id}`;
+      if (completedKeys.has(key)) {
+        skippedCompleted += 1;
+        continue;
+      }
+      if (!overwriteAnswers && existingAnswerKeys.has(key)) {
+        skippedExisting += 1;
+        continue;
+      }
+      pendingPairs.push({ tickerRow, question });
+    }
+  }
+
+  return {
+    activeGroupId,
+    questions,
+    tickers,
+    pendingPairs,
+    completedKeys,
+    counts: {
+      tickerCount: tickers.length,
+      questionCount: questions.length,
+      totalPairs: tickers.length * questions.length,
+      pendingCount: pendingPairs.length,
+      skippedCompleted,
+      skippedExisting
+    }
+  };
+}
+
+function collectEvaluationScope({ targetTicker = '', overwriteEvaluations = false }) {
+  const answersByTicker = listLatestAnswersByTicker();
+  const normalizedTargetTicker = asOptionalString(targetTicker).toUpperCase();
+  const answerTickers = [...answersByTicker.keys()];
+  const tickers = normalizedTargetTicker
+    ? answerTickers.filter((ticker) => ticker === normalizedTargetTicker)
+    : answerTickers;
+  const existingEvaluationTickers = overwriteEvaluations
+    ? new Set()
+    : new Set(listExistingEvaluationTickers({ tickers }));
+
+  const pendingTickers = [];
+  let skippedExisting = 0;
+
+  for (const ticker of tickers) {
+    if (!overwriteEvaluations && existingEvaluationTickers.has(ticker)) {
+      skippedExisting += 1;
+      continue;
+    }
+    pendingTickers.push(ticker);
+  }
+
+  return {
+    answersByTicker,
+    tickers,
+    pendingTickers,
+    counts: {
+      tickerCount: tickers.length,
+      pendingCount: pendingTickers.length,
+      skippedExisting,
+      availableAnswerSets: answerTickers.length
+    }
+  };
+}
+
 async function processAnalysisJob(jobId) {
   if (jobRuntime.activeJobId && jobRuntime.activeJobId !== jobId) return;
   jobRuntime.activeJobId = jobId;
   try {
     const job = getJob(jobId);
     if (!job) return;
-    const groupId = job.groupId || getActiveQuestionGroup()?.id;
-    const questions = listQuestions(groupId);
-    const tickers = listTickers();
+    const scope = collectAnalysisScope({
+      groupId: job.groupId,
+      targetTicker: job.targetTicker,
+      overwriteAnswers: job.overwriteAnswers,
+      jobId
+    });
+    const { questions, tickers, pendingPairs, completedKeys } = scope;
     const market = getLatestMarketRun();
     const instructions = getInstructions().body;
-    const completedKeys = new Set(listAnswerKeysForJob(jobId));
+
     let completed = completedKeys.size;
-    const total = tickers.length * questions.length;
+    const total = pendingPairs.length + completed;
     updateJob(jobId, { totalCount: total, status: 'running', progressMessage: 'Processing tickers', pausedAt: null });
 
-    for (const tickerRow of tickers) {
-      const company = await enrichTicker(tickerRow.ticker);
-      const sourceContext = await buildTickerSourceContext({ ticker: tickerRow.ticker, company, secFilingsService: secFilings });
-      for (const question of questions) {
-        const completionKey = `${tickerRow.ticker}::${question.id}`;
-        const latest = getJob(jobId);
-        if (!latest) return;
-        if (latest.status === 'paused') {
-          jobRuntime.activeJobId = null;
-          return;
-        }
-        if (completedKeys.has(completionKey)) {
-          continue;
-        }
-        updateJob(jobId, {
-          progressMessage: `${tickerRow.ticker}: ${question.prompt}`,
-          totalCount: total,
-          completedCount: completed
-        });
-        const answer = await chatJson({
-          provider: latest.provider,
-          model: latest.model,
-          temperature: 0.2,
-          messages: buildAnswerPrompt({
-            ticker: tickerRow.ticker,
-            company,
-            questionText: question.prompt,
-            market,
-            instructions,
-            sourceContext: sourceContext.text
-          })
-        });
-        insertAnswer({
-          jobId,
-          ticker: tickerRow.ticker,
-          companyName: company.name || tickerRow.companyName || '',
-          questionId: question.id,
-          questionText: question.prompt,
-          answerMd: String(answer?.answerMd || '').trim(),
-          stance: String(answer?.stance || 'neutral').trim(),
-          score: Number(answer?.score || 0),
-          confidence: Number(answer?.confidence || 0),
-          citations: Array.isArray(answer?.citations) ? answer.citations : []
-        });
-        completedKeys.add(completionKey);
-        completed += 1;
-        updateJob(jobId, { completedCount: completed, totalCount: total, progressMessage: `${tickerRow.ticker} complete ${completed}/${total}` });
+    if (!pendingPairs.length) {
+      updateJob(jobId, { status: 'completed', finishedAt: new Date().toISOString(), progressMessage: 'No pending questions to run', completedCount: completed, totalCount: total });
+      return;
+    }
+
+    const tickerContextCache = new Map();
+    for (const { tickerRow, question } of pendingPairs) {
+      const completionKey = `${tickerRow.ticker}::${question.id}`;
+      const latest = getJob(jobId);
+      if (!latest) return;
+      if (latest.status === 'paused') {
+        jobRuntime.activeJobId = null;
+        return;
       }
+
+      let context = tickerContextCache.get(tickerRow.ticker);
+      if (!context) {
+        const company = await enrichTicker(tickerRow.ticker);
+        const sourceContext = await buildTickerSourceContext({ ticker: tickerRow.ticker, company, secFilingsService: secFilings });
+        context = { company, sourceContext };
+        tickerContextCache.set(tickerRow.ticker, context);
+      }
+
+      updateJob(jobId, {
+        progressMessage: `${tickerRow.ticker}: ${question.prompt}`,
+        totalCount: total,
+        completedCount: completed
+      });
+      const answer = await chatJson({
+        provider: latest.provider,
+        model: latest.model,
+        temperature: 0.2,
+        messages: buildAnswerPrompt({
+          ticker: tickerRow.ticker,
+          company: context.company,
+          questionText: question.prompt,
+          market,
+          instructions,
+          sourceContext: context.sourceContext.text
+        })
+      });
+      insertAnswer({
+        jobId,
+        ticker: tickerRow.ticker,
+        companyName: context.company.name || tickerRow.companyName || '',
+        questionId: question.id,
+        questionText: question.prompt,
+        answerMd: String(answer?.answerMd || '').trim(),
+        stance: String(answer?.stance || 'neutral').trim(),
+        score: Number(answer?.score || 0),
+        confidence: Number(answer?.confidence || 0),
+        citations: Array.isArray(answer?.citations) ? answer.citations : []
+      });
+      completedKeys.add(completionKey);
+      completed += 1;
+      updateJob(jobId, { completedCount: completed, totalCount: total, progressMessage: `${tickerRow.ticker} complete ${completed}/${total}` });
     }
     updateJob(jobId, { status: 'completed', finishedAt: new Date().toISOString(), progressMessage: 'Analysis complete', completedCount: completed, totalCount: total });
   } catch (err) {
@@ -567,13 +667,44 @@ app.post('/api/analysis/run', async (req, res) => {
     const provider = normalizeProvider(req.body?.provider);
     const model = asOptionalString(req.body?.model) || defaultModelForProvider(provider);
     const groupId = asOptionalString(req.body?.groupId) || getActiveQuestionGroup()?.id;
-    const tickers = listTickers();
+    const targetTicker = asOptionalString(req.body?.ticker).toUpperCase();
+    const overwriteAnswers = Boolean(req.body?.overwriteAnswers);
+    const allTickers = listTickers();
+    const tickers = targetTicker ? allTickers.filter((tickerRow) => tickerRow.ticker === targetTicker) : allTickers;
     const questions = listQuestions(groupId);
+    if (targetTicker && !tickers.length) return res.status(400).json({ error: 'Selected ticker was not found' });
     if (!tickers.length) return res.status(400).json({ error: 'Add at least one ticker first' });
     if (!questions.length) return res.status(400).json({ error: 'Active question group has no questions' });
-    const jobId = createJob({ type: 'analysis', provider, model, groupId, totalCount: tickers.length * questions.length });
+    const jobId = createJob({
+      type: 'analysis',
+      provider,
+      model,
+      groupId,
+      targetTicker,
+      overwriteAnswers,
+      totalCount: 0
+    });
     processAnalysisJob(jobId).catch(() => undefined);
     return res.json({ ok: true, jobId, job: getJob(jobId) });
+  } catch (err) {
+    return sendError(res, err, 400);
+  }
+});
+
+app.get('/api/analysis/preview', (req, res) => {
+  try {
+    const groupId = asOptionalString(req.query.groupId) || getActiveQuestionGroup()?.id;
+    const targetTicker = asOptionalString(req.query.ticker).toUpperCase();
+    const overwriteAnswers = String(req.query.overwriteAnswers || '').toLowerCase() === 'true';
+    const scope = collectAnalysisScope({ groupId, targetTicker, overwriteAnswers });
+
+    return res.json({
+      ok: true,
+      groupId: scope.activeGroupId,
+      targetTicker: targetTicker || '',
+      overwriteAnswers,
+      counts: scope.counts
+    });
   } catch (err) {
     return sendError(res, err, 400);
   }
@@ -619,16 +750,39 @@ app.get('/api/evaluations', (req, res) => {
   }
 });
 
+app.get('/api/evaluations/preview', (req, res) => {
+  try {
+    const targetTicker = asOptionalString(req.query.ticker).toUpperCase();
+    const overwriteEvaluations = String(req.query.overwriteEvaluations || '').toLowerCase() === 'true';
+    const scope = collectEvaluationScope({ targetTicker, overwriteEvaluations });
+
+    return res.json({
+      ok: true,
+      targetTicker: targetTicker || '',
+      overwriteEvaluations,
+      counts: scope.counts
+    });
+  } catch (err) {
+    return sendError(res, err, 400);
+  }
+});
+
 app.post('/api/evaluations/run', async (req, res) => {
   try {
     const provider = normalizeProvider(req.body?.provider);
     const model = asOptionalString(req.body?.model) || defaultModelForProvider(provider);
-    const answersByTicker = listLatestAnswersByTicker();
+    const targetTicker = asOptionalString(req.body?.ticker).toUpperCase();
+    const overwriteEvaluations = Boolean(req.body?.overwriteEvaluations);
+    const scope = collectEvaluationScope({ targetTicker, overwriteEvaluations });
+    const { answersByTicker, pendingTickers, tickers } = scope;
     const market = getLatestMarketRun();
     const instructions = getInstructions().body;
-    const tickers = [...answersByTicker.keys()];
-    if (!tickers.length) return res.status(400).json({ error: 'Run answers first' });
-    for (const ticker of tickers) {
+    if (targetTicker && !tickers.length) return res.status(400).json({ error: 'Selected ticker has no answer set to evaluate' });
+    if (![...answersByTicker.keys()].length) return res.status(400).json({ error: 'Run answers first' });
+    if (!pendingTickers.length) {
+      return res.json({ ok: true, skipped: true, items: listEvaluations() });
+    }
+    for (const ticker of pendingTickers) {
       const answers = answersByTicker.get(ticker) || [];
       if (!answers.length) continue;
       const companyName = answers[0]?.companyName || '';
